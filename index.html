@@ -1,0 +1,328 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body {
+    max-width: 1300px;
+    margin: 10px auto;
+    position: relative;
+  }
+  div#canvas {
+    width: 1024px;
+    display: inline-block;
+  }
+  div#panel {
+    width: calc(100% - 1050px);
+    display: inline-block;
+    vertical-align: top;
+    padding: 10px;
+  }
+  div.author {
+    position: absolute;
+    bottom: 0;
+  }
+</style>
+<title>Moving letters</title>
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+</head>
+<body>
+  <div id="canvas"></div>
+  <div id="panel">
+    <button onclick="startThisGame()">Start</button>
+    <button onclick="stopThisGame()">Stop</button>
+    <div>Level: <span id="level">1</span></div>
+    <div>Score: <span id="score">0</span></div>
+    <div class="author">
+      Author: <span>Paulína Šimonová</span><br>
+      Date: <span>07/2023</span>
+    </div>
+  </div>
+  
+<script src="pixi/pixi.min.js"></script>
+<script>
+
+//Aliases
+  Application = PIXI.Application,
+  Container = PIXI.Container,
+  loader = PIXI.Loader.shared,
+  resources = PIXI.Loader.shared.resources,
+  TextureCache = PIXI.utils.TextureCache,
+  Sprite = PIXI.Sprite;
+  Text = PIXI.Text,
+  TextStyle = PIXI.TextStyle;
+
+class Game {
+  constructor() {
+    
+    this.widthSize = 1024;  // game area width
+    this.heightSize = 800;  // game area height
+    this.maxLetters = 40;   // max letters in game
+
+    this.speedFall = 0.1;     // speed of falling letters
+    this.rateOfIncrements = 100;  // speed for adding letters
+    this.maxScore = 50;  // max score - You won!!!
+    this.level = 1;
+    this.level2 = 35;  // if score = level2 increase level to 2
+    this.level3 = 45;  // if score = level2 increase level to 3
+
+    this.alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXTYZ";
+
+    this.pauseRectangle = new PIXI.Sprite(PIXI.Texture.WHITE); // pause rectangle covers game
+    this.pauseText = new Text('');
+
+    this.stepCounter = 0;   // 
+    this.letters = [];  // arrays of letters in game
+    this.pressed = '';  // key pressed
+
+    this.score = 0;
+    this.start = 0;
+    this.end = 0;
+
+    //Create a Pixi Application
+    this.app = new Application({ 
+        width: this.widthSize, 
+        height: this.heightSize,                       
+        antialias: true, 
+        transparent: false, 
+        resolution: 1,
+        backgroundColor: 0x6699ff
+      }
+    );
+
+    }
+
+    isRunning(){  // return true if game is running or false if game is paused or ended
+      if(this.start == 1){ return true; }else{ return false; }
+    }
+
+    isEnd(){  // return true if game ended (if You won or lost) or false if game is paused or ended
+      if(this.end == 1){ return true; }else{ return false; }
+    }
+
+    setPressedKey(key){  //  how key was pressed
+      this.pressed = key;
+    }
+
+    wasPressedKey(){  // return true if any key was pressed
+      if(this.pressed != ''){ return true; }else{ return false; }
+    }
+
+    increaseStepCounter(){ this.stepCounter++; }
+
+    startGame() {
+      this.start = 1;
+      if(this.pauseRectangle){ this.pauseRectangle.destroy(true); }
+      if(this.pauseText){ this.pauseText.destroy(true);  }
+      
+    }
+
+    stopGame(text = "Game paused") {
+      this.start = 0;
+      if (typeof this.pauseRectangle !== 'undefined') {
+        if(!this.pauseRectangle._destroyed){ this.pauseRectangle.destroy(true); } // if there are pause rectangle I destroy it ...  for sure
+        if(!this.pauseText._destroyed){ this.pauseText.destroy(true);  }
+      }
+    
+      this.pauseRectangle = new PIXI.Sprite(PIXI.Texture.WHITE); // pause rectangle covers letters
+      this.pauseText = new Text(text);
+
+      this.pauseRectangle.width = this.widthSize - 10; // pause rectangle
+      this.pauseRectangle.height = this.heightSize - 10; 
+      this.pauseRectangle.x = 5; 
+      this.pauseRectangle.y = 5; 
+      this.pauseText.position.set((this.widthSize-this.pauseText.width)/2, (this.heightSize-this.pauseText.height)/2);
+
+      this.app.stage.addChild(this.pauseRectangle);
+      this.app.stage.addChild(this.pauseText);
+    }
+
+    newGame() {
+    
+      this.letters.forEach(element => {
+        element.letterText.destroy(true);  // Letters selected by user disappear. Remove letter from display
+        element.txtBG.destroy(true);       // remove bg rectangle from display
+      });
+      this.level = 1;
+      this.letters = [];  // arrays of letters in game
+      this.pressed = '';  // key pressed
+
+      this.score = 0;
+      this.start = 0;
+      this.end = 0;
+
+      this.printScore();
+
+    }
+
+    lostGame() {
+      this.end = 1;
+      this.stopGame("Game over");
+    }
+
+    wonGame() {
+      this.end = 1;
+      this.stopGame("You won!!");
+    }
+
+    addNewLetter(letter){
+      this.letters.push(letter);
+    }
+    removeLetter(value){ // remove pressed letters (if there are more than 1) and edit score
+
+      value = value.toUpperCase();  // to uppercase 'a' and 'A' are the same
+      let counter = 0;  // how many selected letters are there?
+
+      if(this.alphabet.includes(value)){  // at leas one occurence
+        for( var i = 0; i < this.letters.length; i++){ 
+          if ( this.letters[i].caption == value) { 
+
+            this.letters[i].letterText.destroy(true);  // Letters selected by user disappear. Remove letter from display
+            this.letters[i].txtBG.destroy(true);       // remove bg rectangle from display
+
+            this.letters.splice(i, 1);   // remove letters from array
+            counter++; 
+            i--;  // if I remove letter I have to decrease index
+          }
+        }
+      } 
+      this.printScore(counter);
+    }
+
+    printScore(counter=0){
+      if(counter < 2){
+        this.score = this.score - 2; // In case there is only one letter and the key is pressed (or there are no appropriate letters of pressed key), player loses 2 points.
+        if(this.score < 0){ this.score = 0; }
+      }else{
+        this.score++; // If there are at least two same letters and player presses appropriate key, player gets 1 point.
+      }
+      document.getElementById("score").innerText = this.score; // print score
+
+      if(this.score >= this.maxScore){
+        this.wonGame();
+      }
+
+      if(this.score >= this.level2 && this.level < 2){  // level 2
+        this.level = 2;
+      }
+
+      if(this.score >= this.level3 && this.level < 3){ // level 3
+        this.level = 3;
+      }
+      document.getElementById("level").innerText = this.level; // print level
+    }
+
+}
+
+//  class Letter 
+class Letter {
+  
+  constructor(game) {
+    
+    this.fontsize = Math.floor(Math.random() * 36)+12;  // random fontsize min 12 max 48
+    this.size = Math.floor(Math.random() * (50-this.fontsize)) + this.fontsize; // random size min fontsize max 100
+    this.position = Math.floor(Math.random() * (game.widthSize - this.size - 2))+1;  //  random X position of letter
+    this.caption = game.alphabet[Math.floor(Math.random() * game.alphabet.length)];  // random letter
+    
+    const style = new TextStyle({
+      fontFamily: "Arial",
+      fontSize: this.fontsize,
+    });
+
+    this.letterText = new Text(this.caption, style); // text object
+    this.txtBG = new PIXI.Sprite(PIXI.Texture.WHITE); // text background
+    this.txtBG.width = this.size,
+    this.txtBG.height = this.size; 
+    this.txtBG.x = this.position; 
+  }
+
+  putLetter (game) {  // putting letter to app
+    game.app.stage.addChild(this.txtBG);
+
+    //Position it and add it to the stage
+    this.letterText.x = this.position + (this.txtBG.width - this.letterText.width)/2;
+    this.letterText.y = (this.txtBG.height - this.letterText.height)/2;
+    game.app.stage.addChild(this.letterText);
+  }
+
+  fallDownLetter(game) {  // moving letter  (down)
+    //Move the cat 1 pixel 
+    if(game.heightSize > this.letterText.y){
+      this.txtBG.y += game.level*game.speedFall;
+      this.letterText.y += game.level*game.speedFall;
+    }else{
+      game.lostGame();
+    }
+  }
+ 
+}
+
+// variables
+
+var game = new Game();
+
+function startThisGame() {
+  if(game.isEnd()){
+    game.newGame();
+  }
+  if(!game.isRunning()){
+    game.startGame();
+  }
+}
+
+function stopThisGame() {
+  if(!game.isEnd()){ // if game is ended, there is no need of pause
+    game.stopGame();
+  }
+}
+
+// event listenet
+document.addEventListener("keypress", function(event){
+  if(game.isRunning()){
+    game.setPressedKey(event.key);
+  }
+});
+
+//Add the canvas that Pixi automatically created for you to the HTML document
+document.getElementById("canvas").appendChild(game.app.view);
+
+loader
+  .load(setup);
+
+function setup() {
+  //Start the game loop by adding the `gameLoop` function to
+  //Pixi's `ticker` and providing it with a `delta` argument.
+  //Any functions added to the `ticker` will be called 60 times per second.
+  //This means that the `gameLoop` function (defined in the code ahead) will be updated
+  //60 times per second. 
+  
+  game.app.ticker.add((delta) => gameLoop(delta));
+}
+
+function gameLoop(delta) {
+
+  if(game.isRunning()){
+
+    if(game.wasPressedKey()){
+      game.removeLetter(game.pressed);  // remove pressed letters (if there are more than 1) and edit score
+      game.setPressedKey('');
+    }
+    
+    game.increaseStepCounter();  // counting steps, needed for create new letters
+
+    if (game.stepCounter % Math.round(game.rateOfIncrements/game.level) == 0 && game.letters.length < game.maxLetters) {
+      let letter = new Letter(game);
+      game.addNewLetter(letter);
+      letter.putLetter(game);  // filling arrays of letters
+    }
+    
+    game.letters.forEach(element => {
+      element.fallDownLetter(game);// Move letters down 
+    });
+
+  }
+}
+
+</script>
+</body>
+</html>
